@@ -1,0 +1,49 @@
+services:
+  consumer:
+    build: .
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8081}:8000"
+    networks:
+      - default
+      - kafka
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 40s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-consumer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-consumer}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-metrics_consumer}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  default:
+  kafka:
+    external: true
+    name: ${KAFKA_NETWORK:-kafka-server_default}
+
+volumes:
+  postgres_data:
