@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -12,6 +12,7 @@ class KafkaSettings(BaseSettings):
 
     brokers: str = "kafka-1:9092,kafka-2:9092,kafka-3:9092"
     topic: str = Field(default="orders", min_length=1)
+    dead_letter_topic: str = Field(default="orders.dlq", min_length=1)
     group_id: str = Field(
         default="metrics-orders-consumer", min_length=1, max_length=200
     )
@@ -19,7 +20,7 @@ class KafkaSettings(BaseSettings):
     retry_backoff_seconds: float = Field(default=5, gt=0)
     processing_timeout_seconds: float = Field(default=30, gt=0, lt=240)
 
-    @field_validator("brokers", "topic", "group_id")
+    @field_validator("brokers", "topic", "group_id", "dead_letter_topic")
     @classmethod
     def not_blank(cls, value: str) -> str:
         if not value.strip():
@@ -32,6 +33,12 @@ class KafkaSettings(BaseSettings):
         if not value.replace(",", " ").split():
             raise ValueError("at least one broker is required")
         return value
+
+    @model_validator(mode="after")
+    def separate_dead_letter_topic(self) -> KafkaSettings:
+        if self.dead_letter_topic == self.topic:
+            raise ValueError("dead-letter topic must differ from the source topic")
+        return self
 
     @property
     def bootstrap_servers(self) -> list[str]:
